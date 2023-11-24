@@ -1,4 +1,6 @@
 import time
+
+
 class Variable:
 
     def __init__(self, direction, row, col, length, domain):
@@ -11,8 +13,8 @@ class Variable:
         self.removed_domain = {}
 
 
-def print_board(boardstr, assignment):
-    board = boardstr.split("\n")
+def ShowBoard(grid, assignment):
+    board = grid.split("\n")
     board = [list(row) for row in board]
     for v in assignment:
         val = assignment[v]
@@ -26,16 +28,16 @@ def print_board(boardstr, assignment):
         print(row)
 
 
-def satisfy_constraint(V, assignment, Vx, val):
+def SatisfyConstraint(V, assignment, Vx, val):
     for v in V:
-        Cxv = create_constraint(Vx, v)
+        Cxv = MakeConstraint(Vx, v)
         if v != Vx and v in assignment and Cxv:
             if val[Cxv[0]] != assignment[v][Cxv[1]]:
                 return False
     return True
 
 
-def select_unassigned_variable(V, assignment):
+def UnassignedVariable(V, assignment):
     unassigned = []
     for v in V:
         if v not in assignment:
@@ -45,9 +47,9 @@ def select_unassigned_variable(V, assignment):
     return unassigned[0]
 
 
-def reduce_domain(V, assignment, Vx, val):
+def DomainReduction(V, assignment, Vx, val):
     for v in V:
-        Cxv = create_constraint(Vx, v)
+        Cxv = MakeConstraint(Vx, v)
         if v != Vx and v not in assignment and Cxv:
             for word in v.domain:
                 if val[Cxv[0]] != word[Cxv[1]]:
@@ -57,9 +59,9 @@ def reduce_domain(V, assignment, Vx, val):
                     Vx.removed_domain[v].append(word)
 
 
-def restore_domain(V, assignment, Vx, val):
+def OriginalDomain(V, assignment, Vx, val):
     for v in V:
-        Cxv = create_constraint(Vx, v)
+        Cxv = MakeConstraint(Vx, v)
         if v != Vx and v not in assignment and Cxv:
             if v in Vx.removed_domain:
                 for word in Vx.removed_domain[v]:
@@ -68,28 +70,28 @@ def restore_domain(V, assignment, Vx, val):
                         Vx.removed_domain[v].remove(word)
 
 
-def backtrack(V, assignment):
+def BacktrackingAlgo(V, assignment):
     if len(assignment) == len(V):
         return True
-    Vx = select_unassigned_variable(V, assignment)
+    Vx = UnassignedVariable(V, assignment)
     for val in Vx.domain:
         if val in assignment.values():
             continue
-        if satisfy_constraint(V, assignment, Vx, val):
+        if SatisfyConstraint(V, assignment, Vx, val):
             assignment[Vx] = val
-            reduce_domain(V, assignment, Vx, val)
-            result = backtrack(V, assignment)
+            DomainReduction(V, assignment, Vx, val)
+            result = BacktrackingAlgo(V, assignment)
             if result:
                 return True
         assignment.pop(Vx, None)
-        restore_domain(V, assignment, Vx, val)
+        OriginalDomain(V, assignment, Vx, val)
     return False
 
 
-def revise(Vx, Vy, Cxy):
+def Revised(Vx, Vy, Cxy):
     if not Cxy:
         return False
-    revised = False
+    Revisedd = False
     for x in Vx.domain:
         satisfied = False
         for y in Vy.domain:
@@ -100,17 +102,17 @@ def revise(Vx, Vy, Cxy):
                 break
         if not satisfied:
             Vx.domain.remove(x)
-            revised = True
-    return revised
+            Revisedd = True
+    return Revisedd
 
 
-def arc_consistency_3(S):
+def Arc3(S):
     for s in S:
         X, Y, Cxy = s
-        revise(X, Y, Cxy)
+        Revised(X, Y, Cxy)
 
 
-def create_constraint(Vx, Vy):
+def MakeConstraint(Vx, Vy):
     constraint = ()
     if Vx.direction != Vy.direction:
         if Vx.direction == "horizontal":
@@ -124,20 +126,20 @@ def create_constraint(Vx, Vy):
     return constraint
 
 
-def create_arc(V):
+def MakeArc(V):
     arcs = []
     for i in range(len(V)):
         for j in range(i + 1, len(V)):
             if i != j:
-                Cij = create_constraint(V[i], V[j])
+                Cij = MakeConstraint(V[i], V[j])
                 if len(Cij) > 0:
                     arcs.append((V[i], V[j], Cij))
     return arcs
 
 
-def create_variables(boardstr, words):
+def MakeVariables(grid, words):
     variables = []
-    board = boardstr.split("\n")
+    board = grid.split("\n")
     for row in range(len(board)):
         for col in range(len(board[row])):
             if board[row][col] == "-":
@@ -149,28 +151,28 @@ def create_variables(boardstr, words):
                         else:
                             break
                     if length == 1:
-                        cond = True
+                        condition = True
                         try:
                             if board[row][col + 1] == "-":
-                                cond = False
+                                condition = False
                         except IndexError:
                             pass
                         try:
                             if board[row][col - 1] == "-" and col - 1 >= 0:
-                                cond = False
+                                condition = False
                         except IndexError:
                             pass
                         try:
                             if board[row - 1][col] == "-" and row - 1 >= 0:
-                                cond = False
+                                condition = False
                         except IndexError:
                             pass
                         try:
                             if board[row + 1][col] == "-":
-                                cond = False
+                                condition = False
                         except IndexError:
                             pass
-                        if cond:
+                        if condition:
                             domain = []
                             for word in words:
                                 if len(word) == length:
@@ -217,31 +219,26 @@ def create_variables(boardstr, words):
     return variables
 
 
-def read_file(file_path):
+def GetGrid(file_path):
     with open(file_path) as file:
         return file.read()
 
 
 def main():
-
     assignment = {}
-    boardstr = read_file("grid_medium.txt")
-    words = read_file("Words.txt").splitlines()
+    grid = GetGrid("grid_medium.txt")
+    words = GetGrid("Words.txt").splitlines()
     words = [word.upper() for word in words]
 
-    V = create_variables(boardstr, words)
-    S = create_arc(V)
-
-    arc_consistency_3(S)
-
-    V.sort(key=lambda x: len(x.domain))
-
-    backtrack(V, assignment)
-
-    print_board(boardstr, assignment)
+    variables = MakeVariables(grid, words)
+    arcs = MakeArc(variables)
+    Arc3(arcs)
+    variables.sort(key=lambda x: len(x.domain))
+    BacktrackingAlgo(variables, assignment)
+    ShowBoard(grid, assignment)
 
 
 if __name__ == "__main__":
     start_time = time.time()
     main()
-    print("\n---Time taken for code execution %s seconds ---" % (time.time() - start_time))
+    print("\n---Time taken for code execution %s seconditions ---" % (time.time() - start_time))
