@@ -1,3 +1,4 @@
+import time
 class Variable:
 
     def __init__(self, direction, row, col, length, domain):
@@ -222,6 +223,7 @@ def read_file(file_path):
 
 
 def main():
+
     assignment = {}
     boardstr = read_file("grid_medium.txt")
     words = read_file("Words.txt").splitlines()
@@ -240,4 +242,6 @@ def main():
 
 
 if __name__ == "__main__":
+    start_time = time.time()
     main()
+    print("\n---Time taken for code execution %s seconds ---" % (time.time() - start_time))
