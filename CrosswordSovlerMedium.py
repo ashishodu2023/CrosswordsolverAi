@@ -223,7 +223,7 @@ def read_file(file_path):
 
 def main():
     assignment = {}
-    boardstr = read_file("grid.txt")
+    boardstr = read_file("grid_medium.txt")
     words = read_file("Words.txt").splitlines()
     words = [word.upper() for word in words]
 
