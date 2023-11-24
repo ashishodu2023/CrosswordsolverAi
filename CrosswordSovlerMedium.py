@@ -1,486 +1,243 @@
-import copy
-import multiprocessing
-import random
-import signal
+class Variable:
 
-import numpy as np
-import time
-
-
-###########
-### CLASSES
-###########
-
-class Intersection:
-    def __init__(self, coord, index, intersectedID):
-        self.coord = coord
-        self.index = index
-        self.intersectedID = intersectedID
-
-
-class Word:
-    def __init__(self, pos, horizontal, length, remainingValues, idN):
-        self.pos = pos
-        self.horizontal = horizontal
+    def __init__(self, direction, row, col, length, domain):
+        self.word = ""
+        self.direction = direction
+        self.row = row
+        self.col = col
         self.length = length
-        self.remainingValues = remainingValues
-        self.letters = [0] * length
-        self.id = idN
-        self.intersections = []
-        self.intersectionsNumber = 0
+        self.domain = domain
+        self.removed_domain = {}
 
 
-#################
-### FETCHING DATA
-#################
-
-# Reading crossword and turning it into a nparray
-def read_crossword(crossword):
-    table = []
-    for line in open(crossword):
-        noTabs = list(line.split())
-        for i, v in enumerate(noTabs):
-            if v == "#":
-                noTabs[i] = "35"
-        table.append(noTabs)
-    npTable = np.array(table, dtype=np.uint8)
-    return npTable
-
-
-# function to get the ID of a vertical word from given coordinates
-# returns -1 if the word is not found
-def getVerticalIdByCoordinate(coord, verticalWords):
-    for w in verticalWords:
-        if w.pos[1] == coord[1]:
-            if w.pos[0] <= coord[0] <= w.pos[0] + w.length:
-                return w.id
-    return -1
-
-
-# function to get the ID of a horizontal word from given coordinates
-# returns -1 if the word is not found
-def getHorizontalIdByCoordinate(coord, horizontalWords):
-    for w in horizontalWords:
-        if w.pos[0] == coord[0]:
-            if w.pos[1] <= coord[1] <= w.pos[1] + w.length:
-                return w.id
-    return -1
-
-
-# Looks for all horizontal words to fill in the crossword
-def lookupHorizontalVariables(npTable, idN):
-    foundWords = []
-
-    for x in range(0, npTable.shape[0]):
-        len = 0
-        for y in range(1, npTable.shape[1]):
-            if len == 0:
-                if npTable[x][y - 1] != 35 and npTable[x][y] != 35:
-                    len = 2
-                    continue
-            if len > 1:
-                if npTable[x][y] != 35:
-                    len += 1
-                    continue
-                else:
-                    pos = (x, y - len)
-                    foundWords.append(Word(pos, 1, len, len, idN))
-                    idN += 1
-                    len = 0
-
-        if len > 1:
-            pos = (x, npTable.shape[1] - len)
-            word = Word(pos, 1, len, len, idN)
-            idN += 1
-            foundWords.append(word)
-    return foundWords
-
-
-# Looks for all vertical words to fill in the crossword
-def lookupVerticalVariables(npTable, idN):
-    foundWords = []
-    for y in range(0, npTable.shape[1]):
-        len = 0
-        for x in range(1, npTable.shape[0]):
-            if len == 0:
-                if npTable[x - 1][y] != 35 and npTable[x][y] != 35:
-                    len = 2
-                    continue
-
-            if len > 1:
-                if npTable[x][y] != 35:
-                    len += 1
-                    continue
-                else:
-                    pos = (x - len, y)
-                    foundWords.append(Word(pos, 0, len, len, idN))
-                    idN += 1
-                    len = 0
-        if len > 1:
-            pos = (npTable.shape[0] - len, y)
-            word = Word(pos, 0, len, len, idN)
-            idN += 1
-            foundWords.append(word)
-    return foundWords
-
-
-# From a set of given words and the board, it finds all the intersections
-# and stores them in an attribute in its corresponding word
-def lookupIntersections(words, horizontalWords, verticalWords, crossword):
-    for w in words:
-        if w.horizontal == 1:
-            yStart = w.pos[1]
-            yEnd = yStart + w.length - 1
-            for y in range(yStart, yEnd + 1):
-                if w.pos[0] > 0:
-                    if crossword[w.pos[0] - 1][y] == 0:
-                        index = y - w.pos[1]
-                        intersectedId = getVerticalIdByCoordinate((w.pos[0], y), verticalWords)
-                        w.intersections.append(Intersection((w.pos[0], y), index, intersectedId))
-                        continue
-                if w.pos[0] < crossword.shape[0] - 1:
-                    if crossword[w.pos[0] + 1][y] == 0:
-                        index = y - w.pos[1]
-                        intersectedId = getVerticalIdByCoordinate((w.pos[0], y), verticalWords)
-                        w.intersections.append(Intersection((w.pos[0], y), index, intersectedId))
+def print_board(boardstr, assignment):
+    board = boardstr.split("\n")
+    board = [list(row) for row in board]
+    for v in assignment:
+        val = assignment[v]
+        if v.direction == "horizontal":
+            for i in range(v.length):
+                board[v.row][v.col + i] = val[i]
         else:
-            xStart = w.pos[0]
-            xEnd = xStart + w.length - 1
-            for x in range(xStart, xEnd + 1):
-                if w.pos[1] > 0:
-                    if crossword[x][w.pos[1] - 1] == 0:
-                        index = x - w.pos[0]
-                        intersectedId = getHorizontalIdByCoordinate((x, w.pos[1]), horizontalWords)
-                        w.intersections.append(Intersection((x, w.pos[1]), index, intersectedId))
-                        continue
-                if w.pos[1] < crossword.shape[1] - 1:
-                    if crossword[x][w.pos[1] + 1] == 0:
-                        index = x - w.pos[0]
-                        intersectedId = getHorizontalIdByCoordinate((x, w.pos[1]), horizontalWords)
-                        w.intersections.append(Intersection((x, w.pos[1]), index, intersectedId))
-        w.intersectionsNumber = len(w.intersections)
-
-    return words
+            for i in range(v.length):
+                board[v.row + i][v.col] = val[i]
+    for row in board:
+        print(row)
 
 
-# Fetching words from the given file
-def fillupDictionary(dictPath):
-    # Dictionary with all the words.
-    # Each key is the size of the word.
-    # Each value is a 2D numpy array. The first dimension is the word,
-    # the second dimension contains the letter from each word.
-
-    dict = {}
-
-    for line in open(dictPath, encoding="Windows-1252"):
-        word = line[:-1]
-        size = len(word)
-        byteArr = bytearray(word, 'Windows-1252')
-        asciiWord = list(byteArr)
-
-        if size in dict:
-            dict[size].append(asciiWord)
-        else:
-            dict[size] = [asciiWord]
-
-    # Transforming list into numpy array
-    for k, v in dict.items():
-        random.shuffle(v)
-        numpyArr = np.array(v, dtype=np.uint8)
-        dict[k] = numpyArr
-
-    return dict
-
-
-# Returns the domain of a given variable
-def domain(var, d):
-    return d[var.id]
-
-
-######################################
-### WRITING VARIABLES AND SHOWING DATA
-######################################
-
-# Write lva values to crossword in a readable format
-def storeLvaToCrossword(lva, crossword):
-    for word in lva.values():
-        index = 0
-        if word.horizontal == 1:
-            x = word.pos[0]
-            for y in range(word.pos[1], word.pos[1] + word.length):
-                crossword[x][y] = word.letters[index]
-                index += 1
-        else:
-            y = word.pos[1]
-            for x in range(word.pos[0], word.pos[0] + word.length):
-                crossword[x][y] = word.letters[index]
-                index += 1
-    return crossword
-
-
-# Writes a single word to the crossword
-def storeWordToCrossword(word, crossword):
-    index = 0
-    if word.horizontal == 1:
-        x = word.pos[0]
-        for y in range(word.pos[1], word.pos[1] + word.length):
-            crossword[x][y] = word.letters[index]
-            index += 1
-    else:
-        y = word.pos[1]
-        for x in range(word.pos[0], word.pos[0] + word.length):
-            crossword[x][y] = word.letters[index]
-            index += 1
-    return crossword
-
-
-# Formatting and printing the crossword
-def printCrossword(crossword):
-    print('\n'.join([''.join(['{:4}'.format(chr(item))
-                              for item in row]) for row in crossword]))
-
-#################################
-### MAIN FUNCTIONS OF THE PROGRAM
-#################################
-
-# From a given value, checks all restrictions from other variables
-def restrictionsOK(var, cWord, lva, r):
-    intersections = var.intersections
-
-    for i in intersections:
-        if i.intersectedID not in lva:
-            continue
-
-        intersectedWord = lva[i.intersectedID]
-        candidateValue = cWord[i.index]
-
-        if intersectedWord.horizontal == 1:
-            intersectionIndex = i.coord[1] - intersectedWord.pos[1]
-            intersectedValue = intersectedWord.letters[intersectionIndex]
-        else:
-            intersectionIndex = i.coord[0] - intersectedWord.pos[0]
-            intersectedValue = intersectedWord.letters[intersectionIndex]
-
-        if intersectedValue != candidateValue:
-            return False
-
+def satisfy_constraint(V, assignment, Vx, val):
+    for v in V:
+        Cxv = create_constraint(Vx, v)
+        if v != Vx and v in assignment and Cxv:
+            if val[Cxv[0]] != assignment[v][Cxv[1]]:
+                return False
     return True
 
 
-# writing to LVA list a new variable with a (so far) correct value
-def insertLva(lva, var, cWord):
-    var.letters = cWord.tolist()
-    lva[var.id] = var
-    return lva
+def select_unassigned_variable(V, assignment):
+    unassigned = []
+    for v in V:
+        if v not in assignment:
+            unassigned.append(v)
+
+    unassigned.sort(key=lambda x: len(x.domain))
+    return unassigned[0]
 
 
-# main function of the backtracking algorithm
-def backtracking(lva, lvna, d, r, crossword):
-    # crossword = storeLvaToCrossword(lva, crossword)
-    # printCrossword(crossword)
-
-    if not lvna:
-        return lva, 1
-
-    var = lvna[0]
-
-    domainValues = domain(var, d)
-    for cWord in domainValues:
-
-        if restrictionsOK(var, cWord, lva, 0):
-
-            lva = insertLva(lva, var, cWord)
-            lva, r = backtracking(lva, lvna[1:], d, r, crossword)
-            if r == 1:
-                return lva, r
-
-    # deleting the found value for current var if
-    # it was  a dead-end on deeper calls of the function
-    if r == 0 and var.id in lva:
-        lva.pop(var.id)
-
-    return lva, 0
+def reduce_domain(V, assignment, Vx, val):
+    for v in V:
+        Cxv = create_constraint(Vx, v)
+        if v != Vx and v not in assignment and Cxv:
+            for word in v.domain:
+                if val[Cxv[0]] != word[Cxv[1]]:
+                    v.domain.remove(word)
+                    if v not in Vx.removed_domain:
+                        Vx.removed_domain[v] = []
+                    Vx.removed_domain[v].append(word)
 
 
-# Used in forward checking, it updates all the domains that
-# variables restricted by the current one will have
-def updateDomains(var, lvna, cr, d):
-    isDomainOk = True
-    dTemp = copy.copy(d)
+def restore_domain(V, assignment, Vx, val):
+    for v in V:
+        Cxv = create_constraint(Vx, v)
+        if v != Vx and v not in assignment and Cxv:
+            if v in Vx.removed_domain:
+                for word in Vx.removed_domain[v]:
+                    if val[Cxv[0]] != word[Cxv[1]]:
+                        v.domain.append(word)
+                        Vx.removed_domain[v].remove(word)
 
-    idDict = {}
-    for i, vna in enumerate(lvna):
-        idDict[vna.id] = i
 
-    for inter in var.intersections:
-        if inter.intersectedID not in idDict:
+def backtrack(V, assignment):
+    if len(assignment) == len(V):
+        return True
+    Vx = select_unassigned_variable(V, assignment)
+    for val in Vx.domain:
+        if val in assignment.values():
             continue
+        if satisfy_constraint(V, assignment, Vx, val):
+            assignment[Vx] = val
+            reduce_domain(V, assignment, Vx, val)
+            result = backtrack(V, assignment)
+            if result:
+                return True
+        assignment.pop(Vx, None)
+        restore_domain(V, assignment, Vx, val)
+    return False
 
-        intersectedWordIndex = idDict[inter.intersectedID]
 
-        wordIntersected = lvna[intersectedWordIndex]
-        tempDomain = dTemp[wordIntersected.id]
-
-        x = inter.coord[0]
-        y = inter.coord[1]
-
-        indexInter = 0
-        for inte in wordIntersected.intersections:
-            if inte.intersectedID == var.id:
-                indexInter = inte.index
-
-        existingValue = cr[x][y]
-        if existingValue > 64:  # is a letter
-            subIndex = np.where(tempDomain[:, indexInter] == existingValue)
-            tempDomain = tempDomain[subIndex]
-            if tempDomain.shape[0] == 0:
-                isDomainOk = False
+def revise(Vx, Vy, Cxy):
+    if not Cxy:
+        return False
+    revised = False
+    for x in Vx.domain:
+        satisfied = False
+        for y in Vy.domain:
+            if x[Cxy[0]] == y[Cxy[1]]:
+                satisfied = True
                 break
-
-        dTemp[wordIntersected.id] = tempDomain
-        lvna[intersectedWordIndex].remainingValues = tempDomain.shape[0]
-
-    if not isDomainOk:
-        return None
-    else:
-        return dTemp
+            if satisfied:
+                break
+        if not satisfied:
+            Vx.domain.remove(x)
+            revised = True
+    return revised
 
 
-# main function for the backtracking forward checking algorithm
-def backtrackingForwardChecking(lva, lvna, d, r, crosswordRestrictions):
-    if not lvna:
-        printCrossword(crosswordRestrictions)
-        return lva, 1
-
-    lvna.sort(key=lambda x: x.remainingValues)
-
-    var = lvna[0]
-
-    domainValues = domain(var, d)
-
-    for cWord in domainValues:
-        if not restrictionsOK(var, cWord, lva, 0):
-            continue
-
-        var.letters = cWord.tolist()
-        crosswordRestrictionsBackup = copy.copy(crosswordRestrictions)
-        crosswordRestrictions = storeWordToCrossword(var, crosswordRestrictions)
-
-        updateDomainsResult = updateDomains(var, lvna, crosswordRestrictions, d)
-
-        if updateDomainsResult is None:
-            var.letters = [0] * var.length
-            crosswordRestrictions = crosswordRestrictionsBackup
-            continue
-
-        lva = insertLva(lva, var, cWord)
-        lva, r = backtrackingForwardChecking(lva, lvna[1:], updateDomainsResult, r, crosswordRestrictions)
-        if r == 1:
-            return lva, r
-
-    # deleting the found value for current var if
-    # it was  a dead-end on deeper calls of the function
-    if r == 0 and var.id in lva:
-        lva.pop(var.id)
-
-    return lva, 0
+def arc_consistency_3(S):
+    for s in S:
+        X, Y, Cxy = s
+        revise(X, Y, Cxy)
 
 
-# Creating a domain for each variable
-def createDomains(dict, words):
-    domains = {}
-    for w in words:
-        domains[w.id] = dict[w.length]
-        w.remainingValues = dict[w.length].shape[0]
-
-    return domains, words
-
-
-def shuffleDomains(d):
-    for k, v in d.items():
-        np.random.shuffle(v)
-        d[k] = v
-    return d
-
-# Handler used on signal
-def handler(signum, frame):
-    raise Exception("end of time")
-
-
-# Handling function timeout using SIGALRM
-def handlingLongCrosswordSignal(words, domains, crossword):
-
-    # only works on UNIX
-
-    signal.signal(signal.SIGALRM, handler)
-    signal.alarm(1)
-
-    try:
-        backtrackingForwardChecking({}, copy.deepcopy(words), copy.deepcopy(domains), 0, copy.deepcopy(crossword))
-    except Exception as exc:
-        print(exc)
-        handlingLongCrosswordSignal(words, domains, crossword)
-
-
-# Handling function timeout using Process.join()
-def handlingLongCrosswordJoin(words, domains, crossword):
-
-    # Using processes and not threads because formers don't share variables.
-
-    p = multiprocessing.Process(target=backtrackingForwardChecking, args=({}, words, domains, 0, crossword))
-    p.start()
-
-    p.join(1)
-
-    if p.is_alive():
-        p.kill()
-        p.join()
-        domains = shuffleDomains(domains)
-        handlingLongCrosswordJoin(words, domains, crossword)
-
-
-def main(crosswordName, dicName, isForwardChecking):
-    startTime = time.time()
-
-    crossword = read_crossword(crosswordName)
-
-    horizontalWords = lookupHorizontalVariables(crossword, 0)
-    verticalWords = lookupVerticalVariables(crossword, len(horizontalWords))
-    words = horizontalWords + verticalWords
-    words = lookupIntersections(words, horizontalWords, verticalWords, crossword)
-
-    dict = fillupDictionary(dicName)
-    domains, words = createDomains(dict, words)
-
-    if not isForwardChecking:
-        BTstart = time.time()
-
-        lva, r = backtracking({}, words, domains, 0, crossword)
-        crossword = storeLvaToCrossword(lva, crossword)
-        printCrossword(crossword)
-
-        BTend = time.time()
-        BTelapsedTime = BTend - BTstart
-        print("\nBacktracking: ", BTelapsedTime, "seconds")
-
-    else:
-        FCstart = time.time()
-        if crosswordName == "grid.txt":
-            handlingLongCrosswordJoin(words, domains, crossword)
+def create_constraint(Vx, Vy):
+    constraint = ()
+    if Vx.direction != Vy.direction:
+        if Vx.direction == "horizontal":
+            if Vy.col >= Vx.col and Vy.col <= Vx.col + Vx.length - 1:
+                if Vx.row >= Vy.row and Vx.row <= Vy.row + Vy.length - 1:
+                    constraint = (Vy.col - Vx.col, Vx.row - Vy.row)
         else:
-
-            lva, r = backtrackingForwardChecking({}, words, domains, 0, crossword)
-        FCend = time.time()
-        FCelapsedTime = FCend - FCstart
-        print("\nForward Checking: ", FCelapsedTime, "seconds")
-
-    endTime = time.time()
-    totalElapsedTime = endTime - startTime
-
-    print("Total elapsed time: ", totalElapsedTime, "seconds\n\n")
+            if Vy.row >= Vx.row and Vy.row <= Vx.row + Vx.length - 1:
+                if Vx.col >= Vy.col and Vx.col <= Vy.col + Vy.length - 1:
+                    constraint = (Vy.row - Vx.row, Vx.col - Vy.col)
+    return constraint
 
 
-if __name__ == '__main__':
+def create_arc(V):
+    arcs = []
+    for i in range(len(V)):
+        for j in range(i + 1, len(V)):
+            if i != j:
+                Cij = create_constraint(V[i], V[j])
+                if len(Cij) > 0:
+                    arcs.append((V[i], V[j], Cij))
+    return arcs
 
-    print("Crossword solution\n")
-    main("grid.txt", "Words.txt", True)
+
+def create_variables(boardstr, words):
+    variables = []
+    board = boardstr.split("\n")
+    for row in range(len(board)):
+        for col in range(len(board[row])):
+            if board[row][col] == "-":
+                if col == 0 or board[row][col - 1] == "#":
+                    length = 0
+                    for i in range(col, len(board[row])):
+                        if board[row][i] == "-":
+                            length += 1
+                        else:
+                            break
+                    if length == 1:
+                        cond = True
+                        try:
+                            if board[row][col + 1] == "-":
+                                cond = False
+                        except IndexError:
+                            pass
+                        try:
+                            if board[row][col - 1] == "-" and col - 1 >= 0:
+                                cond = False
+                        except IndexError:
+                            pass
+                        try:
+                            if board[row - 1][col] == "-" and row - 1 >= 0:
+                                cond = False
+                        except IndexError:
+                            pass
+                        try:
+                            if board[row + 1][col] == "-":
+                                cond = False
+                        except IndexError:
+                            pass
+                        if cond:
+                            domain = []
+                            for word in words:
+                                if len(word) == length:
+                                    domain.append(word)
+                            variables.append(Variable(
+                                "horizontal",
+                                row,
+                                col,
+                                length,
+                                domain
+                            ))
+
+                    if length > 1:
+                        domain = []
+                        for word in words:
+                            if len(word) == length:
+                                domain.append(word)
+                        variables.append(Variable(
+                            "horizontal",
+                            row,
+                            col,
+                            length,
+                            domain
+                        ))
+                if row == 0 or board[row - 1][col] == "#":
+                    length = 0
+                    for i in range(row, len(board)):
+                        if board[i][col] == "-":
+                            length += 1
+                        else:
+                            break
+                    if length > 1:
+                        domain = []
+                        for word in words:
+                            if len(word) == length:
+                                domain.append(word)
+                        variables.append(Variable(
+                            "vertical",
+                            row,
+                            col,
+                            length,
+                            domain
+                        ))
+    return variables
+
+
+def read_file(file_path):
+    with open(file_path) as file:
+        return file.read()
+
+
+def main():
+    assignment = {}
+    boardstr = read_file("grid.txt")
+    words = read_file("Words.txt").splitlines()
+    words = [word.upper() for word in words]
+
+    V = create_variables(boardstr, words)
+    S = create_arc(V)
+
+    arc_consistency_3(S)
+
+    V.sort(key=lambda x: len(x.domain))
+
+    backtrack(V, assignment)
+
+    print_board(boardstr, assignment)
+
+
+if __name__ == "__main__":
+    main()
