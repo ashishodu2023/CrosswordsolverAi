@@ -1,8 +1,6 @@
 import time
 
-
 class Variable:
-
     def __init__(self, direction, row, col, length, domain):
         self.word = ""
         self.direction = direction
@@ -11,7 +9,6 @@ class Variable:
         self.length = length
         self.domain = domain
         self.removed_domain = {}
-
 
 def ShowBoard(grid, assignment):
     board = grid.split("\n")
@@ -27,7 +24,6 @@ def ShowBoard(grid, assignment):
     for row in board:
         print(row)
 
-
 def SatisfyConstraint(V, assignment, Vx, val):
     for v in V:
         Cxv = MakeConstraint(Vx, v)
@@ -36,28 +32,36 @@ def SatisfyConstraint(V, assignment, Vx, val):
                 return False
     return True
 
+def MostConstrainedVariable(V, assignment):
+    unassigned = [v for v in V if v not in assignment]
+    unassigned.sort(key=lambda x: len(x.domain))
+    return unassigned[0] if unassigned else None
+
+def OrderDomainValues(V, assignment, Vx):
+    return sorted(Vx.domain, key=lambda val: CountConflicts(V, assignment, Vx, val))
+
+def CountConflicts(V, assignment, Vx, val):
+    conflicts = 0
+    for v in V:
+        Cxv = MakeConstraint(Vx, v)
+        if v != Vx and v in assignment and Cxv:
+            if val[Cxv[0]] != assignment[v][Cxv[1]]:
+                conflicts += 1
+    return conflicts
 
 def UnassignedVariable(V, assignment):
-    unassigned = []
-    for v in V:
-        if v not in assignment:
-            unassigned.append(v)
-
-    unassigned.sort(key=lambda x: len(x.domain))
-    return unassigned[0]
-
+    return MostConstrainedVariable(V, assignment)
 
 def DomainReduction(V, assignment, Vx, val):
     for v in V:
         Cxv = MakeConstraint(Vx, v)
         if v != Vx and v not in assignment and Cxv:
-            for word in v.domain:
+            for word in v.domain.copy():
                 if val[Cxv[0]] != word[Cxv[1]]:
                     v.domain.remove(word)
                     if v not in Vx.removed_domain:
                         Vx.removed_domain[v] = []
                     Vx.removed_domain[v].append(word)
-
 
 def OriginalDomain(V, assignment, Vx, val):
     for v in V:
@@ -69,48 +73,82 @@ def OriginalDomain(V, assignment, Vx, val):
                         v.domain.append(word)
                         Vx.removed_domain[v].remove(word)
 
-
-def BacktrackingAlgo(V, assignment):
-    if len(assignment) == len(V):
+def BacktrackingAlgo(V, assignment, depth_limit):
+    #print("Current Assignment:", assignment)
+    if len(assignment) == len(V) or depth_limit == 0:
         return True
     Vx = UnassignedVariable(V, assignment)
-    for val in Vx.domain:
+    #print("Selected Variable:", Vx)
+    for val in OrderDomainValues(V, assignment, Vx):
         if val in assignment.values():
             continue
         if SatisfyConstraint(V, assignment, Vx, val):
             assignment[Vx] = val
             DomainReduction(V, assignment, Vx, val)
-            result = BacktrackingAlgo(V, assignment)
+            #print(f"Assigned {Vx}: {val}")
+            result = BacktrackingAlgo(V, assignment, depth_limit - 1)
             if result:
                 return True
         assignment.pop(Vx, None)
         OriginalDomain(V, assignment, Vx, val)
     return False
 
-
 def Revised(Vx, Vy, Cxy):
     if not Cxy:
         return False
     Revisedd = False
     for x in Vx.domain:
-        satisfied = False
-        for y in Vy.domain:
-            if x[Cxy[0]] == y[Cxy[1]]:
-                satisfied = True
-                break
-            if satisfied:
-                break
+        satisfied = any(x[Cxy[0]] == y[Cxy[1]] for y in Vy.domain)
         if not satisfied:
             Vx.domain.remove(x)
             Revisedd = True
     return Revisedd
 
+def MRVArc(V, arcs):
+    mrv_arcs = []
+    for arc in arcs:
+        X, Y, Cxy = arc
+        if X in V and Y in V:
+            mrv_arcs.append(arc)
+    return mrv_arcs
 
-def Arc3(S):
-    for s in S:
-        X, Y, Cxy = s
-        Revised(X, Y, Cxy)
+def MRVBacktrackingAlgo(V, assignment, depth_limit):
+    #print("Current Assignment:", assignment)
+    if len(assignment) == len(V) or depth_limit == 0:
+        return True
+    Vx = MostConstrainedVariable(V, assignment)
+    #print("Selected Variable:", Vx)
+    mrv_arcs = MRVArc(V, MakeArc(V))
+    for val in OrderDomainValues(V, assignment, Vx):
+        if val in assignment.values():
+            continue
+        if SatisfyConstraint(V, assignment, Vx, val):
+            assignment[Vx] = val
+            ForwardChecking(V, assignment, Vx, val)
+            #print(f"Assigned {Vx}: {val}")
+            result = BacktrackingAlgo(V, assignment, depth_limit - 1)
+            if result:
+                return True
+        assignment.pop(Vx, None)
+        OriginalDomain(V, assignment, Vx, val)
+    return False
 
+def ForwardChecking(V, assignment, Vx, val):
+    for v in V:
+        Cxv = MakeConstraint(Vx, v)
+        if v != Vx and v not in assignment and Cxv:
+            v.domain = [word for word in v.domain if val[Cxv[0]] == word[Cxv[1]]]
+    #print("After Forward Checking:", [v.domain for v in V])
+
+def MakeArc(V):
+    arcs = []
+    for i in range(len(V)):
+        for j in range(i + 1, len(V)):
+            if i != j:
+                Cij = MakeConstraint(V[i], V[j])
+                if len(Cij) > 0:
+                    arcs.append((V[i], V[j], Cij))
+    return arcs
 
 def MakeConstraint(Vx, Vy):
     constraint = ()
@@ -124,18 +162,6 @@ def MakeConstraint(Vx, Vy):
                 if Vx.col >= Vy.col and Vx.col <= Vy.col + Vy.length - 1:
                     constraint = (Vy.row - Vx.row, Vx.col - Vy.col)
     return constraint
-
-
-def MakeArc(V):
-    arcs = []
-    for i in range(len(V)):
-        for j in range(i + 1, len(V)):
-            if i != j:
-                Cij = MakeConstraint(V[i], V[j])
-                if len(Cij) > 0:
-                    arcs.append((V[i], V[j], Cij))
-    return arcs
-
 
 def MakeVariables(grid, words):
     variables = []
@@ -218,11 +244,9 @@ def MakeVariables(grid, words):
                         ))
     return variables
 
-
 def GetGrid(file_path):
     with open(file_path) as file:
         return file.read()
-
 
 def main():
     assignment = {}
@@ -231,14 +255,12 @@ def main():
     words = [word.upper() for word in words]
 
     variables = MakeVariables(grid, words)
-    arcs = MakeArc(variables)
-    Arc3(arcs)
-    variables.sort(key=lambda x: len(x.domain))
-    BacktrackingAlgo(variables, assignment)
+    depth_limit = 50  # Set a depth limit
+    MRVBacktrackingAlgo(variables, assignment, depth_limit)
     ShowBoard(grid, assignment)
-
 
 if __name__ == "__main__":
     start_time = time.time()
     main()
-    print("\n---Time taken for code execution %s seconditions ---" % (time.time() - start_time))
+    print("\n---Time taken for code execution %s seconds ---" %
+          (time.time() - start_time))

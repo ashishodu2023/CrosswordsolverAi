@@ -61,7 +61,7 @@ def  CrosswordSolverTiny(grid, word_data):
         for row in grid:
             print("".join(row))
         end_time=(time.time() - start_time)
-        print(f'The total execution time is = {round(end_time,4)} seconds')
+        print(f'\n---Time taken for code execution %s seconds ---{end_time}')
     else:
         print("No solution found")
 
