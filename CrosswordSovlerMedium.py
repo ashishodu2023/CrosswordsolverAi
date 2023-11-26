@@ -25,7 +25,7 @@ def ShowBoard(grid, assignment):
             for i in range(v.length):
                 board[v.row + i][v.col] = val[i]
     for row in board:
-        print(row)
+        print(" ".join(map(str, row)))
 
 
 def SatisfyConstraint(V, assignment, Vx, val):
