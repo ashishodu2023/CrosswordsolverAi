@@ -1,8 +1,7 @@
 import time
 
-
+# Class to represent a variable in the crossword puzzle
 class Variable:
-
     def __init__(self, direction, row, col, length, domain):
         self.word = ""
         self.direction = direction
@@ -13,6 +12,7 @@ class Variable:
         self.removed_domain = {}
 
 
+# Function to display the crossword board
 def ShowBoard(grid, assignment):
     board = grid.split("\n")
     board = [list(row) for row in board]
@@ -28,6 +28,7 @@ def ShowBoard(grid, assignment):
         print(" ".join(map(str, row)))
 
 
+# Function to check if a given assignment satisfies the constraints
 def SatisfyConstraint(V, assignment, Vx, val):
     for v in V:
         Cxv = MakeConstraint(Vx, v)
@@ -37,6 +38,7 @@ def SatisfyConstraint(V, assignment, Vx, val):
     return True
 
 
+# Function to find an unassigned variable
 def UnassignedVariable(V, assignment):
     unassigned = []
     for v in V:
@@ -47,18 +49,15 @@ def UnassignedVariable(V, assignment):
     return unassigned[0]
 
 
-def DomainReduction(V, assignment, Vx, val):
+# Function to reduce the domain of variables based on constraints
+def ForwardChecking(V, assignment, Vx, val):
     for v in V:
         Cxv = MakeConstraint(Vx, v)
         if v != Vx and v not in assignment and Cxv:
-            for word in v.domain:
-                if val[Cxv[0]] != word[Cxv[1]]:
-                    v.domain.remove(word)
-                    if v not in Vx.removed_domain:
-                        Vx.removed_domain[v] = []
-                    Vx.removed_domain[v].append(word)
+            v.domain = [word for word in v.domain if val[Cxv[0]] == word[Cxv[1]]]
 
 
+# Function to restore the original domain of variables
 def OriginalDomain(V, assignment, Vx, val):
     for v in V:
         Cxv = MakeConstraint(Vx, v)
@@ -70,6 +69,7 @@ def OriginalDomain(V, assignment, Vx, val):
                         Vx.removed_domain[v].remove(word)
 
 
+# Backtracking algorithm to solve the crossword puzzle with forward checking
 def BacktrackingAlgo(V, assignment):
     if len(assignment) == len(V):
         return True
@@ -79,7 +79,7 @@ def BacktrackingAlgo(V, assignment):
             continue
         if SatisfyConstraint(V, assignment, Vx, val):
             assignment[Vx] = val
-            DomainReduction(V, assignment, Vx, val)
+            ForwardChecking(V, assignment, Vx, val)
             result = BacktrackingAlgo(V, assignment)
             if result:
                 return True
@@ -88,30 +88,7 @@ def BacktrackingAlgo(V, assignment):
     return False
 
 
-def Revised(Vx, Vy, Cxy):
-    if not Cxy:
-        return False
-    Revisedd = False
-    for x in Vx.domain:
-        satisfied = False
-        for y in Vy.domain:
-            if x[Cxy[0]] == y[Cxy[1]]:
-                satisfied = True
-                break
-            if satisfied:
-                break
-        if not satisfied:
-            Vx.domain.remove(x)
-            Revisedd = True
-    return Revisedd
-
-
-def Arc3(S):
-    for s in S:
-        X, Y, Cxy = s
-        Revised(X, Y, Cxy)
-
-
+# Function to create a constraint between two variables
 def MakeConstraint(Vx, Vy):
     constraint = ()
     if Vx.direction != Vy.direction:
@@ -126,6 +103,7 @@ def MakeConstraint(Vx, Vy):
     return constraint
 
 
+# Function to create arcs between variables based on constraints
 def MakeArc(V):
     arcs = []
     for i in range(len(V)):
@@ -137,6 +115,7 @@ def MakeArc(V):
     return arcs
 
 
+# Function to create variable objects from the crossword grid and word list
 def MakeVariables(grid, words):
     variables = []
     board = grid.split("\n")
@@ -219,11 +198,13 @@ def MakeVariables(grid, words):
     return variables
 
 
+# Function to get the crossword grid from a file
 def GetGrid(file_path):
     with open(file_path) as file:
         return file.read()
 
 
+# Main function to solve the crossword puzzle
 def main():
     assignment = {}
     grid = GetGrid("grid_medium.txt")
@@ -231,8 +212,6 @@ def main():
     words = [word.upper() for word in words]
 
     variables = MakeVariables(grid, words)
-    arcs = MakeArc(variables)
-    Arc3(arcs)
     variables.sort(key=lambda x: len(x.domain))
     BacktrackingAlgo(variables, assignment)
     ShowBoard(grid, assignment)
@@ -241,4 +220,4 @@ def main():
 if __name__ == "__main__":
     start_time = time.time()
     main()
-    print("\n---Time taken for code execution %s seconditions ---" % (time.time() - start_time))
+    print("\n---Time taken for code execution %s seconds ---" % (time.time() - start_time))
